@@ -1,3 +1,5 @@
+< All files are included; the solution is implemented in `project1.js`. >
+
 In this project we will implement an alpha compositing function for raster images using JavaScript.
 You are given an HTML file that implements a simple web-based image compositing application. The video on the following link shows how the interface works:
 https://youtu.be/QpwfzYpseeo
