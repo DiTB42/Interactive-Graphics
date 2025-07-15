@@ -1,0 +1,62 @@
+# Blender 4.4.3 MTL File: 'None'
+# www.blender.org
+
+newmtl Blade_low
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd C:/Blade_low_baseColor.png
+map_Bump -bm 1.000000 C:/Blade_low_normal.png
+map_Pr C:/Blade_low_metallicRoughness.png 
+
+newmtl Diamond_low
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd C:/Diamond_low_baseColor.png
+map_Bump -bm 1.000000 C:/Diamond_low_normal.png
+map_Pr C:/Diamond_low_metallicRoughness.png 
+
+newmtl Handle_low
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd C:/Handle_low_baseColor.png
+map_Bump -bm 1.000000 C:/Handle_low_normal.png
+map_Pr C:/Handle_low_metallicRoughness.png 
+
+newmtl Hilt_low
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd C:/Hilt_low_baseColor.png
+map_Bump -bm 1.000000 C:/Hilt_low_normal.png
+map_Pr C:/Hilt_low_metallicRoughness.png 
+
+newmtl Wings_low
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd C:/Wings_low_baseColor.png
+map_Bump -bm 1.000000 C:/Wings_low_normal.png
+map_Pr C:/Wings_low_metallicRoughness.png 

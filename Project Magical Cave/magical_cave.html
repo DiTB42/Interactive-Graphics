@@ -1,0 +1,1264 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title> Magical Crystal Cave — Shader in HTML</title>
+<style>
+#controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.1);
+  color: white;
+  padding: 10px;
+  font-family: sans-serif;
+  z-index: 10;
+}
+
+  html, body, canvas {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: black;
+  }
+
+#cameraInfo {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 10px;
+  font-family: monospace;
+  font-size: 14px;
+  z-index: 10;
+  border-radius: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.label {
+  width: 70px;
+  display: inline-block;
+  text-align: right;
+  margin-right: 6px;
+}
+</style>
+</head>
+
+<body>
+  
+<div id="controls">
+  
+  <div class="row"><span class="label">Cave:</span>
+    <input type="file" id="texCaveMaterialSet" accept="image/*" multiple>
+  </div>
+
+  <div class="row"><span class="label">Floor:</span>
+    <input type="file" id="texFloorMaterialSet" accept="image/*" multiple>
+  </div>
+
+  <div class="row"><span class="label">Crystals:</span>
+    <input type="file" id="texCrystals" accept="image/*">
+  </div>
+
+  <div class="row"><span class="label">Fairies:</span>
+    <input type="file" id="fairyObjPairInput" accept=".obj" multiple>
+  </div>
+
+  <div class="row"><span class="label">Torches:</span>
+    <input type="file" id="torchObjInput" accept=".obj,.mtl,image/*" multiple>
+  </div>
+
+  <div class="row"><span class="label">Sword:</span>
+    <input type="file" id="swordObjInput" accept=".obj,.mtl,image/*" multiple>
+  </div>
+
+  <div class="row"><span class="label">Pedestal:</span>
+    <input type="file" id="rockObjInput" accept=".obj,.mtl,image/*" multiple>
+  </div>
+
+  <div class="row">
+    <span class="label">Admin Lock:</span>
+    <input type="checkbox" id="adminLockToggle">
+  </div>
+
+  <div class="row">
+    <span class="label">Ground-Only:</span>
+    <input type="checkbox" id="groundOnlyToggle">
+  </div>
+
+</div>
+
+
+<div id="cameraInfo">Y: 0.00</div>
+
+<canvas id="glCanvas"></canvas>
+
+<div id="zPrompt" style="
+  position: absolute;
+  color: white;
+  font-family: 'Arial', sans-serif;
+  font-size: 14px;
+  pointer-events: none;
+  display: none;
+  text-align: center;
+  text-shadow: 0 0 6px rgb(24, 121, 219);
+  white-space: nowrap;
+">
+</div>
+
+
+// CAVE SHADERS
+<script id="cave-vert" type="x-shader/x-vertex">
+
+attribute vec3 aPosition;
+attribute vec2 aUV;
+
+uniform mat4 uProjection;
+uniform mat4 uView;
+uniform mat4 uModel;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+// Small radial displacement noise
+float rand(vec2 co) {
+  return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+float radialNoise(vec2 uv) {
+  float theta = uv.x * 6.2831;
+  float r = uv.y;
+  vec2 p = vec2(cos(theta), sin(theta)) * r;
+  return rand(p);
+}
+
+// Large smooth dome deformation
+
+const int NUM_BUMPS = 4;
+uniform vec3 uBumpCenters[NUM_BUMPS];
+uniform float uBumpHeights[NUM_BUMPS];
+uniform float uBumpRadii[NUM_BUMPS];
+
+float domeBumpContribution(vec3 pos) {
+  float bump = 0.0;
+  for (int i = 0; i < NUM_BUMPS; i++) {
+    float d = distance(pos.xz, uBumpCenters[i].xz);
+    float r = uBumpRadii[i];
+    float h = uBumpHeights[i];
+    float fade = 1.0 - smoothstep(0.0, r, d);
+    bump += fade * h;
+  }
+  return bump;
+}
+
+
+
+void main() {
+  vUV = aUV;
+
+  vec3 displaced;
+  vec3 normal = normalize(aPosition);
+
+  if (aUV.y >= 0.9995) {
+    displaced = vec3(aPosition.x, -2.5, aPosition.z); // flat base
+  } else {
+    float n = radialNoise(aUV);
+
+    // small detailed bumps
+    float base = n * 0.3;
+
+    // large-scale dome bumps
+    float bigBumps = domeBumpContribution(aPosition);
+
+
+    // fade both by vertical position
+    float fade = smoothstep(0.1, 1.0, aUV.y);
+    float elevation = (base + bigBumps * 3.0) * fade;
+
+    displaced = aPosition - normal * elevation * 1.0;
+  }
+
+  vec4 worldPos = uModel * vec4(displaced, 1.0);
+  vWorldPos = worldPos.xyz;
+  vWorldNormal = normal;
+
+  gl_Position = uProjection * uView * worldPos;
+  gl_Position.z *= 0.9999;
+}
+</script>
+
+<script id="cave-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+uniform sampler2D uAlbedo;
+uniform sampler2D uNormal;
+uniform sampler2D uRoughness;
+uniform sampler2D uAO;
+uniform sampler2D uSpecular;
+uniform bool uUseTranslucency;
+uniform sampler2D uTranslucency;
+
+
+uniform bool uUseTexture;
+uniform vec3 uLightColor;
+uniform vec3 uLightDir;
+
+#define MAX_TORCHES 4
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+uniform bool uUseTorchLight;
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uTime;
+uniform float uPulseOverride; // 0 = normal pulse, 1 = constant bright
+
+
+
+vec3 triplanarSample(sampler2D tex, vec3 pos, vec3 normal) {
+  vec3 blending = abs(normal);
+  blending = pow(blending, vec3(4.0));
+  blending /= (blending.x + blending.y + blending.z);
+
+  vec3 x = texture2D(tex, pos.yz).rgb;
+  vec3 y = texture2D(tex, pos.zx).rgb;
+  vec3 z = texture2D(tex, pos.xy).rgb;
+
+  return x * blending.x + y * blending.y + z * blending.z;
+}
+
+float triplanarSample1(sampler2D tex, vec3 pos, vec3 normal) {
+  vec3 blending = abs(normal);
+  blending = pow(blending, vec3(4.0));
+  blending /= (blending.x + blending.y + blending.z);
+
+  float x = texture2D(tex, pos.yz).r;
+  float y = texture2D(tex, pos.zx).r;
+  float z = texture2D(tex, pos.xy).r;
+
+  return x * blending.x + y * blending.y + z * blending.z;
+}
+
+void main() {
+  vec3 normal = normalize(vWorldNormal);
+  vec3 pos = vWorldPos * 0.3;  // texture scale factor
+
+  vec3 albedo = uUseTexture ? triplanarSample(uAlbedo, pos, normal) : vec3(0.6);
+  vec3 trans = uUseTranslucency ? texture2D(uTranslucency, vUV).rgb : vec3(1.0);
+  vec3 albedoMod = albedo * trans;
+
+  vec3 normalMap = triplanarSample(uNormal, pos, normal) * 2.0 - 1.0;
+  float roughness = triplanarSample1(uRoughness, pos, normal);
+  float specular = triplanarSample1(uSpecular, pos, normal);
+  vec3 ao = triplanarSample(uAO, pos, normal);
+
+  vec3 N = normalize(normalMap);
+  vec3 L;
+  float attenuation = 1.0;
+
+  vec3 totalLight = vec3(0.0);
+
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+
+      vec3 lightVec = uTorchPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = max(dot(N, L), 0.6);  // simulate full light
+
+      float attenuation = clamp(1.0 - dist / uTorchRadius[i], 0.0, 1.0);
+
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);  // fast small variation
+      totalLight += uTorchColor[i] * diff * attenuation * flicker;
+
+    }
+  } else {
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(N, L), 0.0);
+    totalLight = uLightColor * diff;
+  }
+  
+  vec3 crystalLight = vec3(0.0);
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+      vec3 lightVec = uCrystalPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = 1.0;
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+      crystalLight += uCrystalColor * diff * attenuation * pulse * 1.5;
+    }
+  }
+
+  float z = vWorldPos.z;
+
+  vec3 ambient = uUseTorchLight ? vec3(0.0) : vec3(0.7) * ao;  
+  vec3 lighting = ambient + (totalLight + crystalLight) * (1.0 - roughness + specular * 0.3);
+  vec3 color = albedoMod * lighting;
+
+  gl_FragColor = vec4(color, 1.0);
+}
+</script>
+
+
+
+//  CRYSTAL SHADERS
+<script id="crystal-vert" type="x-shader/x-vertex">
+    attribute vec3 aPosition;
+    attribute vec2 aUV;
+
+    uniform mat4 uProjection;
+    uniform mat4 uView;
+    uniform mat4 uModel;
+
+    varying vec2 vUV;
+
+    void main() {
+      vUV = aUV;
+      gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+    }
+</script>
+
+<script id="crystal-frag" type="x-shader/x-fragment">
+    precision mediump float;
+
+    uniform sampler2D uCrystal;
+    uniform float uTime;
+    uniform bool uUseTexture;
+    uniform float uPulseOverride; // 0 = normal pulse, 1 = constant bright
+    uniform vec3 uCrystalTint;
+
+    varying vec2 vUV;
+
+
+   void main() {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);     // symmetrical pulse
+    float biased = pow(raw, 0.8);                // stays bright longer
+    biased = mix(0.2, 1.0, biased);              // keep a minimum glow
+    float glow = mix(biased, 1.5, uPulseOverride);  // apply sword override if needed
+
+    vec3 tex = texture2D(uCrystal, vUV).rgb;
+    float brightness = 1.0 + glow;
+
+    vec3 tint = uCrystalTint;
+    vec3 color = uUseTexture ? tex * brightness * tint : tint * glow;
+
+    gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+  }
+
+</script>
+
+
+
+// WATER SHADERS
+<script id="water-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute float aHeight;
+attribute vec3 aNormal;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+
+void main() {
+  vec3 displaced = aPosition;
+  displaced.y += aHeight * 20.0; 
+
+
+  vNormal = normalize((uModel * vec4(aNormal, 0.0)).xyz);  // world-space ripple normal
+
+
+  vec4 world = uModel * vec4(displaced, 1.0);
+  vWorldPos = world.xyz;
+  gl_Position = uProjection * uView * world;
+}
+
+
+
+
+</script>
+
+<script id="water-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform sampler2D uReflectionTex;
+uniform sampler2D uDistortionMap;
+uniform vec2 uResolution;
+uniform vec2 uGlowPosition;   // world xz
+uniform float uGlowTime;      // seconds
+uniform float uTime;
+
+#define MAX_TORCHES 4
+uniform bool uUseTorchLight;
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+uniform vec3 uCameraPosition;
+
+
+float shininess = 32.0;  // how sharp the glints are
+float specularBoost = 15.0; // overall strength
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uPulseOverride; // 0 = normal pulse, 1 = constant bright
+
+
+
+
+
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+
+
+void main() {
+  // 1. Sample screen-space UV (stable, camera-aligned)
+  vec2 uv = gl_FragCoord.xy / uResolution;
+  uv.y = 1.0 - uv.y;
+
+  // 2. Sample distortion from ripple-normal texture
+  vec2 rippleUV = (vWorldPos.xz / (2.0 * 7.0)) + 0.5;
+  rippleUV = clamp(rippleUV, 0.0, 1.0);
+
+  vec2 distortion = texture2D(uDistortionMap, rippleUV).xy;
+  distortion = (distortion - 0.5) * 2.0;
+
+  // 3. Apply ripple distortion to UV
+  float distortionStrength = 0.08;
+  vec2 distortedUV = uv + distortion * distortionStrength;
+
+  // 4. Sample reflection texture
+  vec3 reflectionColor = texture2D(uReflectionTex, distortedUV).rgb;
+
+  // 5. Optional blue tint 
+  reflectionColor *= vec3(0.6, 0.75, 1.0); 
+
+  // 6. Optional: blend with underwater base color
+  vec3 baseColor = vec3(0.3, 1.0, 0.83);
+  vec3 finalColor = mix(baseColor, reflectionColor, 0.85);
+
+  float timeNow = uTime;  // Pass time from JS as uniform
+
+  if (uGlowTime > 0.0 && abs(timeNow - uGlowTime) < 0.08) {
+    float d = distance(vWorldPos.xz, uGlowPosition);
+    float intensity = exp(-d * 20.0);  // sharper falloff
+    finalColor += vec3(0.8, 0, 1.0) * intensity;
+  }
+
+
+  // Optional: Fresnel effect
+  // vec3 viewDir = normalize(uCameraPosition - vWorldPos);
+  // float fresnel = pow(1.0 - dot(viewDir, vec3(0.0, 1.0, 0.0)), 3.0);
+  // finalColor = mix(baseColor, reflectionColor, fresnel);
+
+  // === Torch light contribution on water ===
+  vec3 totalTorch = vec3(0.0);
+  vec3 N = normalize(vNormal);  // use actual surface normal
+
+
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+
+      vec3 lightVec = uTorchPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      
+
+      float diff = max(dot(N, L), 0.0);
+      
+      float attenuation = clamp(1.0 - (dist * dist) / (uTorchRadius[i] * uTorchRadius[i]), 0.0, 1.0);
+      vec3 V = normalize(uCameraPosition - vWorldPos); // view dir
+      vec3 H = normalize(L + V);  // Blinn halfway vector
+
+      float spec = pow(max(dot(N, H), 0.0), shininess);
+      vec3 specular = uTorchColor[i] * spec * attenuation * specularBoost;
+
+
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);  // fast small variation
+      totalTorch += uTorchColor[i] * diff * attenuation * flicker;
+
+      totalTorch += specular;
+    }
+  
+  }
+
+  vec3 crystalLight = vec3(0.0);
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+
+      vec3 lightVec = uCrystalPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = max(dot(N, L), 0.0);
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+
+      crystalLight += uCrystalColor * diff * attenuation * pulse * 0.7;  
+    }
+  }
+
+
+  // Mix the torch light with reflection and base
+  finalColor += totalTorch * 0.05;
+  finalColor += crystalLight;
+
+
+  gl_FragColor = vec4(finalColor, 0.6); // semi-transparent
+}
+
+
+</script>
+
+
+
+// FLOOR SHADERS
+<script id="floor-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec2 aUV;
+
+uniform mat4 uProjection;
+uniform mat4 uView;
+uniform mat4 uModel;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+
+void main() {
+  vUV = aUV;
+
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vWorldPos = world.xyz;
+
+  gl_Position = uProjection * uView * world;
+  gl_Position.z *= 0.9999;
+}
+
+</script>
+
+<script id="floor-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+
+uniform sampler2D uAlbedo;
+uniform sampler2D uNormal;
+uniform sampler2D uRoughness;
+uniform sampler2D uAO;
+uniform sampler2D uSpecular;
+
+uniform mat4 uModel;
+
+uniform bool uUseTexture;
+
+uniform vec3 uLightColor;
+uniform vec3 uLightDir;
+
+#define MAX_TORCHES 4
+uniform bool uUseTorchLight;
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uTime;
+uniform float uPulseOverride; // 0 = normal pulse, 1 = constant bright
+
+
+void main() {
+
+  vec3 albedo = uUseTexture ? texture2D(uAlbedo, vUV).rgb : vec3(0.4, 0.25, 0.2);
+  vec3 normalMap = uUseTexture ? texture2D(uNormal, vUV).rgb * 2.0 - 1.0 : vec3(0.0, 1.0, 0.0);
+  float roughness = uUseTexture ? texture2D(uRoughness, vUV).r : 0.6;
+  vec3 ao = uUseTexture ? texture2D(uAO, vUV).rgb : vec3(1.0);
+  float specular = uUseTexture ? texture2D(uSpecular, vUV).r : 0.1;
+
+
+  vec3 N = normalize(normalMap);
+  vec3 L;
+  float attenuation = 1.0;
+
+  vec3 totalLight = vec3(0.0);
+
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+
+      vec3 lightVec = uTorchPos[i] - vWorldPos; 
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = 1.0;  // simulate full light
+      float attenuation = clamp(1.0 - dist / uTorchRadius[i], 0.0, 1.0);
+
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);  // fast small variation
+      totalLight += uTorchColor[i] * diff * attenuation * flicker;
+
+    }
+  } else {
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(N, L), 0.0);
+    totalLight = uLightColor * diff;
+  }
+  
+  vec3 crystalLight = vec3(0.0);
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+      vec3 lightVec = uCrystalPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = 1.0;  // simulate full light
+
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+      crystalLight += uCrystalColor * diff * attenuation * pulse * 1.5;
+    }
+  }
+
+
+  vec3 ambient = uUseTorchLight ? vec3(0.0) : vec3(0.9) * ao;
+  vec3 lighting = ambient + (totalLight + crystalLight) * (1.0 - roughness + specular * 0.3);
+  vec3 color = albedo * lighting;
+
+  gl_FragColor = vec4(color, 1.0);
+}
+
+</script>
+
+
+
+// ROCK SHADERS
+<script id="rock-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+
+uniform mat4 uModel;
+uniform mat4 uProjection;
+uniform mat4 uView;
+
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+void main() {
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vWorldPos = world.xyz;
+  vWorldNormal = mat3(uModel) * normalize(aPosition);
+  gl_Position = uProjection * uView * world;
+}
+</script>
+
+<script id="rock-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+uniform sampler2D uAlbedo;
+uniform sampler2D uNormal;
+uniform sampler2D uRoughness;
+uniform sampler2D uAO;
+uniform sampler2D uSpecular;
+
+uniform bool uUseTexture;
+uniform vec3 uLightColor;
+uniform vec3 uLightDir;
+
+#define MAX_TORCHES 4
+uniform bool uUseTorchLight;
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uTime;
+uniform float uPulseOverride; // 0 = normal pulse, 1 = constant bright
+
+
+
+vec3 triplanarSample(sampler2D tex, vec3 pos, vec3 normal) {
+  vec3 blend = abs(normal);
+  blend = pow(blend, vec3(4.0));
+  blend /= (blend.x + blend.y + blend.z);
+
+  vec3 x = texture2D(tex, pos.yz).rgb;
+  vec3 y = texture2D(tex, pos.zx).rgb;
+  vec3 z = texture2D(tex, pos.xy).rgb;
+
+  return x * blend.x + y * blend.y + z * blend.z;
+}
+
+float triplanarSample1(sampler2D tex, vec3 pos, vec3 normal) {
+  vec3 blend = abs(normal);
+  blend = pow(blend, vec3(4.0));
+  blend /= (blend.x + blend.y + blend.z);
+
+  float x = texture2D(tex, pos.yz).r;
+  float y = texture2D(tex, pos.zx).r;
+  float z = texture2D(tex, pos.xy).r;
+
+  return x * blend.x + y * blend.y + z * blend.z;
+}
+
+void main() {
+  vec3 N = normalize(vWorldNormal);
+  vec3 pos = vWorldPos * 0.3;
+
+  vec3 albedo = uUseTexture ? triplanarSample(uAlbedo, pos, N) : vec3(0.4);
+  vec3 normalMap = uUseTexture ? triplanarSample(uNormal, pos, N) * 2.0 - 1.0 : N;
+  float roughness = uUseTexture ? triplanarSample1(uRoughness, pos, N) : 0.6;
+  float specular = uUseTexture ? triplanarSample1(uSpecular, pos, N) : 0.1;
+  vec3 ao = uUseTexture ? triplanarSample(uAO, pos, N) : vec3(1.0);
+
+  vec3 L;
+  float attenuation = 1.0;
+  vec3 totalLight = vec3(0.0);
+
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+
+      vec3 lightVec = uTorchPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = 1.0;  // simulate full light
+
+      float attenuation = clamp(1.0 - dist / uTorchRadius[i], 0.0, 1.0);
+
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);  // fast small variation
+      totalLight += uTorchColor[i] * diff * attenuation * flicker;
+
+    }
+  } else {
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(normalMap, L), 0.0);
+    totalLight = uLightColor * diff;
+  }
+
+  vec3 crystalLight = vec3(0.0);
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+      vec3 lightVec = uCrystalPos[i] - vWorldPos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = 1.0;
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+      crystalLight += uCrystalColor * diff * attenuation * pulse * 1.5;
+    }
+  }
+
+  vec3 ambient = uUseTorchLight ? vec3(0.0) : vec3(0.7) * ao;
+
+  vec3 lighting = ambient + (totalLight + crystalLight) * (1.0 - roughness + specular * 0.3);
+
+
+  gl_FragColor = vec4(albedo * lighting, 1.0);
+}
+</script>
+
+
+
+// MUSHROOM SHADERS
+<script id="mushroom-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec2 aUV;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying vec2 vUV;
+varying float vIsCap;
+
+void main() {
+  vUV = aUV;
+
+  // Hard cap/stem split by vertical height
+  vIsCap = step(0.5, aPosition.y);  // 0 = stem, 1 = cap
+
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+</script>
+
+<script id="mushroom-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 vUV;
+varying float vIsCap;
+
+float circularDot(vec2 uv, float spacing, float radius) {
+  vec2 cell = fract(uv * spacing) - 0.5;
+  float dist = length(cell);
+  return 1.0 - smoothstep(radius, radius - 0.01, dist); // 1 = inside dot
+}
+
+void main() {
+  vec3 red = vec3(0.0, 1.0, 0.3);
+  vec3 white = vec3(0.8, 0.0, 1.0);
+  vec3 brown = vec3(0.8, 0.7, 0.5);
+
+  if (vIsCap > 0.96) {
+    // Cap: red with white dots ---- not true anymore, it's purple and green but don't wanna change names
+    float dotMask = circularDot(vUV, 5.0, 0.3);
+    vec3 baseColor = white;
+    vec3 dotColor = red;
+    vec3 color = mix(baseColor, dotColor, dotMask);  // white dots on red
+    gl_FragColor = vec4(color, 1.0);
+  } else {
+    // Stem: solid brown
+    gl_FragColor = vec4(brown, 1.0);
+  }
+}
+</script>
+
+
+
+// FAIRY SHADERS
+<script id="fairy-vert" type="x-shader/x-vertex">
+attribute vec3 aClosed;
+attribute vec3 aOpen;
+attribute float aIsCenter;
+
+uniform float uFlap;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying float vIsCenter;
+
+void main() {
+  vec3 pos = mix(aClosed, aOpen, uFlap);
+  vIsCenter = aIsCenter; // Pass to fragment shader
+  gl_Position = uProjection * uView * uModel * vec4(pos, 1.0);
+}
+</script>
+
+<script id="fairy-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform float uTime;
+uniform vec3 uBaseColor;
+uniform vec3 uGlowColor;
+varying float vIsCenter;
+
+void main() {
+  float pulse = 0.5 + 0.5 * sin(uTime * 1.0);
+
+  vec3 wingColor = vec3(0.8, 0.8, 1.1);  // Soft bluish for wings
+
+  vec3 centerColor = mix(uBaseColor, uGlowColor, pulse); // Interpolate pulse
+  vec3 color = mix(wingColor, centerColor, vIsCenter);   // Use on center only
+
+  float alpha = mix(0.25, 1.0, vIsCenter);  // Transparent wings, solid center
+  gl_FragColor = vec4(color, alpha);
+}
+</script>
+
+
+
+// TORCH SHADERS
+<script id="torch-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec2 aUV;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying vec2 vUV;
+
+void main() {
+  vUV = aUV;
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+
+
+</script>
+
+<script id="torch-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform vec3 uColor;
+uniform bool uUseTexture;
+uniform sampler2D uTex;
+
+varying vec2 vUV;
+
+void main() {
+  vec3 texColor = texture2D(uTex, vUV).rgb;
+  vec3 baseColor = uUseTexture ? texColor : uColor;
+
+  // Add a glow near the tip based on UV.y
+  float glowIntensity = smoothstep(0.75, 1.0, vUV.y); 
+  vec3 glowColor = vec3(2.5, 1.8, 0.4); // warm flame yellow-orange
+
+  vec3 finalColor = baseColor + glowColor * glowIntensity * 2.0;
+
+  gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
+}
+
+
+</script>
+
+
+
+// SWORD SHADERS
+<script id="pbr-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec2 aUV;
+attribute vec3 aTangent;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+varying vec3 vTangent;
+
+void main() {
+  vUV = aUV;
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vWorldPos = world.xyz;
+  vWorldNormal = mat3(uModel) * normalize(aPosition);
+  vTangent = mat3(uModel) * aTangent;
+  gl_Position = uProjection * uView * world;
+}
+</script>
+
+<script id="pbr-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform vec3 uColor;
+uniform bool uUseTexture;
+uniform bool uUseMR;
+uniform sampler2D uTex;
+uniform sampler2D uMetallicRoughness;
+uniform sampler2D uNormalMap;
+uniform bool uUseNormalMap;
+
+uniform float uGlowStrength;
+uniform float uTime;
+
+#define MAX_TORCHES 4
+uniform bool uUseTorchLight;
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uPulseOverride;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+void main() {
+  vec3 albedo = uUseTexture ? texture2D(uTex, vUV).rgb : uColor;
+  float roughness = 0.6;
+  float metallic = 0.0;
+
+  if (uUseMR) {
+    vec3 mr = texture2D(uMetallicRoughness, vUV).rgb;
+    roughness = mr.g;
+    metallic = mr.b;
+  }
+
+  // Use normal map's blue channel to subtly vary roughness
+  if (uUseNormalMap) {
+    float roughMod = texture2D(uNormalMap, vUV).b;
+    roughness *= mix(1.0, roughMod, 0.5); // smooth if flat, sharp if detailed
+  }
+
+  vec3 N = normalize(vWorldNormal);
+  vec3 V = normalize(vec3(0.0, 0.0, 1.0));
+  vec3 totalLight = vec3(0.0);
+
+  // === Torch lighting
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+      vec3 Lvec = uTorchPos[i] - vWorldPos;
+      float dist = length(Lvec);
+      vec3 L = normalize(Lvec);
+      float diff = 1.0;
+      float attenuation = clamp(1.0 - dist / uTorchRadius[i], 0.0, 1.0);
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);
+      totalLight += uTorchColor[i] * diff * attenuation * flicker * 0.2;
+    }
+  } else {
+    totalLight += vec3(0.7, 0.6, 0.6);  // ambient fallback
+  }
+
+  // === Crystal lighting
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+      vec3 Lvec = uCrystalPos[i] - vWorldPos;
+      float dist = length(Lvec);
+      vec3 L = normalize(Lvec);
+      float diff = 1.0;
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+      totalLight += uCrystalColor * diff * attenuation * pulse;
+    }
+  }
+
+  // === Specular
+  vec3 Lmain = normalize(vec3(0.4, 1.0, 0.3));
+  vec3 H = normalize(Lmain + V);
+  float ndoth = max(dot(N, H), 0.0);
+  float specular = pow(ndoth, mix(8.0, 64.0, 1.0 - roughness)) * (1.0 - roughness);
+  vec3 spec = vec3(specular) * mix(vec3(0.04), albedo, metallic);
+
+  // === Shimmer + fresnel
+  float fresnel = pow(1.0 - dot(N, V), 5.0);
+  float glintStrength = metallic * (1.0 - roughness) * fresnel;
+  vec3 glintColor = mix(vec3(1.0), albedo, 0.3);
+  vec3 softBloom = glintColor * glintStrength * 0.3;
+
+  // === Magic tint on metal
+  vec3 metalHighlightColor = vec3(0.6, 0.8, 1.3);
+  float metalMask = smoothstep(0.5, 1.0, metallic);
+  vec3 metalColor = metalHighlightColor * metalMask * 0.2;
+
+  vec3 glow = albedo * uGlowStrength;
+  vec3 finalColor = albedo * totalLight + spec + glow + metalColor + softBloom;
+
+  gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
+}
+</script>
+
+
+
+// AURA SHADERS
+<script id="aura-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+varying vec2 vUV;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+void main() {
+  vUV = aPosition.xz + 0.5; // map [-0.5, 0.5] to [0, 1]
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+</script>
+
+<script id="aura-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 vUV;
+uniform float uTime;
+uniform vec3 uAuraColor;  
+
+void main() {
+  float dist = length(vUV - vec2(0.5));
+  float ring = smoothstep(0.4, 0.1, dist);  // soft circular falloff
+  float pulse = 0.85 + 0.15 * sin(uTime * 5.0); // range: [0.7, 1.0]
+
+
+  vec3 color = uAuraColor * pulse;  // use color
+
+  gl_FragColor = vec4(color, ring * 0.7);  // soft glow
+}
+
+</script>
+
+
+
+// PEDESTAL SHADERS
+<script id="pedestal-vert" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec2 aUV;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+void main() {
+  vUV = aUV;
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vWorldPos = world.xyz;
+  vWorldNormal = mat3(uModel) * normalize(aPosition);
+
+  gl_Position = uProjection * uView * world;
+}
+</script>
+
+<script id="pedestal-frag" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec2 vUV;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+uniform sampler2D uTex;
+uniform bool uUseTexture;
+uniform vec3 uColor;
+
+uniform float uGlowStrength;
+
+uniform vec3 uLightColor;
+uniform vec3 uLightDir;
+
+#define MAX_TORCHES 4
+uniform bool uUseTorchLight;
+uniform int uNumTorchLights;
+uniform vec3 uTorchPos[MAX_TORCHES];
+uniform vec3 uTorchColor[MAX_TORCHES];
+uniform float uTorchRadius[MAX_TORCHES];
+
+#define MAX_CRYSTAL_LIGHTS 20
+uniform bool uUseCrystalLight;
+uniform int uNumCrystalLights;
+uniform vec3 uCrystalPos[MAX_CRYSTAL_LIGHTS];
+uniform vec3 uCrystalColor;
+uniform float uTime;
+uniform float uPulseOverride;
+
+void main() {
+  vec3 albedo = uUseTexture ? texture2D(uTex, vUV).rgb : uColor;
+  vec3 N = normalize(vWorldNormal);
+  vec3 pos = vWorldPos;
+
+  // === BASE LIGHTING ===
+  vec3 totalLight = vec3(0.0);
+
+  if (uUseTorchLight) {
+    for (int i = 0; i < MAX_TORCHES; i++) {
+      if (i >= uNumTorchLights) break;
+
+      vec3 lightVec = uTorchPos[i] - pos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = max(dot(N, L), 0.0);
+      float attenuation = clamp(1.0 - dist / uTorchRadius[i], 0.0, 1.0);
+
+      float flicker = 0.95 + 0.05 * sin(uTime * 10.0 + float(i) * 10.0);  // fast small variation
+      totalLight += uTorchColor[i] * diff * attenuation * flicker;
+
+    }
+  } else {
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(N, L), 0.0);
+    totalLight += uLightColor * diff;
+  }
+
+  // === CRYSTAL LIGHTS ===
+  if (uUseCrystalLight) {
+    float raw = 0.5 + 0.5 * sin(uTime * 2.0);
+    float biased = pow(raw, 0.8);             // stays near 1.0 longer
+    biased = mix(0.2, 1.0, biased);           // avoid full darkness
+    float pulse = mix(biased, 1.5, uPulseOverride);
+
+
+    for (int i = 0; i < MAX_CRYSTAL_LIGHTS; i++) {
+      if (i >= uNumCrystalLights) break;
+
+      vec3 lightVec = uCrystalPos[i] - pos;
+      float dist = length(lightVec);
+      vec3 L = normalize(lightVec);
+      float diff = max(dot(N, L), 0.0);
+      float attenuation = clamp(1.0 - dist / 4.5, 0.0, 1.0);
+
+      totalLight += uCrystalColor * diff * attenuation * pulse * 1.5;
+    }
+  }
+
+  // === Ambient + Glow ===
+  vec3 ambient = uUseTorchLight ? vec3(0.0) : vec3(0.7);
+  vec3 lighting = ambient + totalLight;
+  vec3 glow = albedo * uGlowStrength;
+
+  vec3 finalColor = albedo * lighting + glow;
+
+  gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
+}
+</script>
+
+
+
+  <!-- Load glMatrix first -->
+  <script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/gl-matrix-min.js"></script>
+
+  <!-- Load main JS file -->
+  <script src="magical_cave.js"></script>
+
+
+</body>
+</html>

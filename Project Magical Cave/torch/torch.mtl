@@ -1,0 +1,3 @@
+newmtl torchstick
+Kd 0.800000 0.800000 0.800000
+map_Kd torchstick_baseColor.png
