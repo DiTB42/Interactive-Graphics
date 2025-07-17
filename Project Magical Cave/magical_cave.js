@@ -1149,7 +1149,7 @@ function generateCaveDomeMesh(res = 64, radius = 6) {
   };
 }
 
-function generateRockMesh() {
+function generateRockMesh() {                           // for rocks in the rock ring, implemented in floor buffers
   const positions = [];
   const uvs = [];
   const indices = [];
@@ -1158,8 +1158,8 @@ function generateRockMesh() {
   const segments = 8;
   const radius = 0.5;
 
-  for (let y = 0; y <= rings; y++) {
-    const v = y / rings;
+  for (let y = 0; y <= rings; y++) {                          // create vertices with noise (we loop through latitudinal slices from top to bottom and 
+    const v = y / rings;                                      // through longitutes around the sphere)
     const theta = v * Math.PI;
 
     for (let x = 0; x <= segments; x++) {
@@ -1168,16 +1168,16 @@ function generateRockMesh() {
 
       const noise = 1 + (rand() - 0.5) * 0.3;
 
-      const xp = Math.sin(theta) * Math.cos(phi);
+      const xp = Math.sin(theta) * Math.cos(phi);             // converts spherical coords to cartesian  
       const yp = Math.cos(theta);
       const zp = Math.sin(theta) * Math.sin(phi);
 
-      positions.push(xp * radius * noise, yp * radius * noise, zp * radius * noise);
-      uvs.push(u, v);
+      positions.push(xp * radius * noise, yp * radius * noise, zp * radius * noise);    // apply random distortion and scale to desired radius 
+      uvs.push(u, v);                                                                   // store positions and uvs 
     }
   }
 
-  const cols = segments + 1;
+  const cols = segments + 1;                                  // create triangles 
   for (let y = 0; y < rings; y++) {
     for (let x = 0; x < segments; x++) {
       const i0 = y * cols + x;
@@ -1189,7 +1189,7 @@ function generateRockMesh() {
     }
   }
 
-  return {
+  return {                                                    // return rock geometry
     position: new Float32Array(positions),
     uv: new Float32Array(uvs),
     index: new Uint16Array(indices),
@@ -1197,63 +1197,36 @@ function generateRockMesh() {
   };
 }
 
-function generateRockRing(floorRing, radiusOffset = 0.0, jitter = 0.02, count = 256) {
-  const rocks = [];
-  for (let i = 0; i < count; i++) {
-    const t = i / count;
-    const ringIndex = Math.floor(t * floorRing.length);
-    const [ox, oy, oz] = floorRing[ringIndex];
-
-    const r = Math.sqrt(ox * ox + oz * oz);
-    const angle = Math.atan2(oz, ox);
-
-    const offsetR = r + radiusOffset + (rand() - 0.5) * (jitter * 2.0);
-
-    const rx = Math.cos(angle) * offsetR;
-    const rz = Math.sin(angle) * offsetR;
-    const ry = oy + 0.005 + (rand() - 0.5) * 0.015;
-
-    // Vary scale 
-    let baseScale = rand();
-    if (baseScale < 0.2) baseScale *= 0.5; // very small
-    else if (baseScale > 0.8) baseScale *= 1.5; // very large
-
-    const scale = (0.3 + baseScale * 0.6) * 1.9;  
-
-    rocks.push({ position: [rx, ry, rz], scale });
-  }
-  return rocks;
-}
-
-function generatePointyCrystalGeometry(segments = 6, baseRadius = 0.2, height = 1.0) {
+function generatePointyCrystalGeometry(segments = 6, baseRadius = 0.2, height = 1.0) {  // hexagonal (6 segments)
+  // storing : 
   const positions = [];
   const indices = [];
   const uvs = [];
 
   // Base ring
-  for (let i = 0; i < segments; i++) {
+  for (let i = 0; i < segments; i++) {                              // loops segments times around a full circle
     const angle = (i / segments) * 2 * Math.PI;
     const x = Math.cos(angle) * baseRadius;
     const z = Math.sin(angle) * baseRadius;
-    positions.push(x, 0, z);
-    uvs.push((x / baseRadius + 1) / 2, (z / baseRadius + 1) / 2);
+    positions.push(x, 0, z);                                        // adds to base ring at y=0
+    uvs.push((x / baseRadius + 1) / 2, (z / baseRadius + 1) / 2);   // converts x/z to [0,1] for uvs
   }
 
-  // Top ring 
+  // Top ring  - same thing but smaller 
   for (let i = 0; i < segments; i++) {
     const angle = (i / segments) * 2 * Math.PI;
     const x = Math.cos(angle) * baseRadius * 0.4;
     const z = Math.sin(angle) * baseRadius * 0.4;
-    positions.push(x, height * 0.8, z);
+    positions.push(x, height * 0.8, z);                             // adds to top ring at 80% of total height 
     uvs.push((x / baseRadius + 1) / 2, (z / baseRadius + 1) / 2);
   }
 
-  // Tip vertex
+  // Tip vertex -- adds tip at very top
   positions.push(0, height, 0);
   uvs.push(0.5, 1.0);
   const tipIndex = 2 * segments;
 
-  // Side faces
+  // Side faces -- connects base and top rings 
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
     const b0 = i;
@@ -1265,25 +1238,25 @@ function generatePointyCrystalGeometry(segments = 6, baseRadius = 0.2, height = 
     indices.push(b0, t1, t0);
   }
 
-  // Top faces connecting to tip
+  // Top faces connecting to tip - forms triangles from top ring to crystal tip (fan shape)
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
     indices.push(segments + i, tipIndex, segments + next);
   }
 
-  return {
-    position: new Float32Array(positions),
-    uv: new Float32Array(uvs),
-    index: new Uint16Array(indices),
-    vertexCount: indices.length
+  return {                                    // converts arrays to typed arrays for GPU upload. 
+    position: new Float32Array(positions),    // 3 float per vertex
+    uv: new Float32Array(uvs),                // 2 floats per vertex
+    index: new Uint16Array(indices),          // 3 indices per triangle
+    vertexCount: indices.length               // total number of indices (used in draw calls)
   };
 }
 
-function generateRockCrystalGeometry() {
+function generateRockCrystalGeometry() {                // calls generateRockMesh
   return generateRockMesh(); 
 }
 
-function generatePedestalCrystals() {
+function generatePedestalCrystals() {                   // sets the position around pedestal and call rock crystal type
   const pedestalCenter = [SWORD_POSITION[0], -2.25, SWORD_POSITION[2]];
   const radius = 0.25;
   const count = 8;
@@ -1306,38 +1279,8 @@ function generatePedestalCrystals() {
   }
 }
 
-function generateGrid(size = 32) {
-  const positions = [];
-  const uvs = [];
-  const indices = [];
-
-  for (let y = 0; y <= size; y++) {
-    for (let x = 0; x <= size; x++) {
-      const u = x / size;
-      const v = y / size;
-      positions.push(u * 6 - 3, v * 6 - 3, 0);
-      uvs.push(u, v);
-    }
-  }
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = y * (size + 1) + x;
-      indices.push(i, i + 1, i + size + 1);
-      indices.push(i + 1, i + size + 2, i + size + 1);
-    }
-  }
-
-  return {
-    position: new Float32Array(positions),
-    uv: new Float32Array(uvs),
-    index: new Uint16Array(indices),
-    vertexCount: indices.length
-  };
-}
-
-for (let i = 0; i < 4; i++) {
-  const angle = rand() * 2 * Math.PI;
+for (let i = 0; i < 4; i++) {                           // used for bumps in cave dome (we push the bumpcenters, heights and radii)
+  const angle = rand() * 2 * Math.PI;                   // fills global arrays that are used as uniforms in drawCave
   const radius = 4 + rand() * 2;
   const x = Math.cos(angle) * radius;
   const z = Math.sin(angle) * radius;
@@ -1346,50 +1289,49 @@ for (let i = 0; i < 4; i++) {
   bumpRadii.push(2.0 + rand() * 1.0);    // wide
 }
 
-function generateVolumetricFloorWithDepression(caveGeometry, {
+function generateVolumetricFloorWithDepression({
   height = 0.6,
-  radialSteps = 10,
+  radialSteps = 10, // number of concentric rings
   depressionRadius = 5.0,
   depressionDepth = 2.0,
-  uvScale = 3.0
+  uvScale = 3.0 // how tightly uvs are packed (larger = smaller texture files)
   } = {}) {
   
+  const outer = domeBaseRing.map(p => roundVertex(p));                          // copy ring vertices
+  const outerRadius = Math.max(...outer.map(([x, _, z]) => Math.hypot(x, z)));  // largest distance from center
 
-  // Flatten Y and extract outer radius
-  const outer = domeBaseRing.map(p => roundVertex(p));
-  const outerRadius = Math.max(...outer.map(([x, _, z]) => Math.hypot(x, z)));
-
-  const positions = [];
-  const uvs = [];
-  const indices = [];
-  const rows = [];
+  const positions = []; //vertex pos
+  const uvs = [];       //texture uvs
+  const indices = [];   //triangle indices
+  const rows = [];      //grid of concentric rings of vertices (array of ringRow)
 
   // TOP SURFACE (with central depression)
   for (let r = 0; r <= radialSteps; r++) {
-    const t = r / radialSteps;
-    const ringRow = [];
+    const t = r / radialSteps;                // t controls how far from center we are
+    const ringRow = [];                       // single ring of vertices . contains position of every vertex around the ring. 
     
-    for (let i = 0; i < outer.length; i++) {
+    for (let i = 0; i < outer.length; i++) {  // interpolate inward from outer ring 
       const [ox, oy, oz] = outer[i];
-      const x = ox * (1 - t);
+      const x = ox * (1 - t);                 // each ring interpolated towards center
       const z = oz * (1 - t);
-      const rXZ = Math.hypot(x, z);
-      // Irregular noise-based dip
+      const rXZ = Math.hypot(x, z);           // radial distance from center 
+      // Add noise (bumps to depression)
       const angle = Math.atan2(z, x);
-      const noise = Math.sin(angle * 3.0 + Math.cos(x * z * 2.3)) * 0.15;
+      const noise = Math.sin(angle * 3.0 + Math.cos(x * z * 2.3)) * 0.15;   // trigonometric functions to create smooth bumps
       const angled = Math.atan2(z, x);
-      const wobble = Math.sin(angled * 4.0 + Math.cos(rXZ * 2.3)) * 0.6;
+      const wobble = Math.sin(angled * 4.0 + Math.cos(rXZ * 2.3)) * 0.6;    // boundary becomes irregular and jagged 
       const bumpyRadius = depressionRadius + wobble;
-      const fade = smoothstep(0.0, bumpyRadius, rXZ);
-      const bumpProfile = Math.pow(1 - fade, 0.1); 
-      const dip = -depressionDepth * bumpProfile + noise * bumpProfile;
+      const fade = smoothstep(0.0, bumpyRadius, rXZ);                       // interp function for smooth transitions (from 0 to bumpyRadius, rXZ : input)
+      const bumpProfile = Math.pow(1 - fade, 0.1);                          // exponential : Math.pow(base, exponent). Depression deeper at center, flatter at edges
+      const dip = -depressionDepth * bumpProfile + noise * bumpProfile;     // final vertical displacement 
       const y = oy + dip + 0.1;
 
       ringRow.push([x, y, z]);
-      uvs.push(x / (uvScale * outerRadius) + 0.5, z / (uvScale * outerRadius) + 0.5);
+      uvs.push(x / (uvScale * outerRadius) + 0.5, z / (uvScale * outerRadius) + 0.5);  // adds 2D texture coords for every vertex on the floor
     }
     rows.push(ringRow);
   }
+
   // Raise flat rectangular rocky path across water
   const pathXMin = 0.5;
   const pathXMax = 1.2;  
@@ -1399,15 +1341,15 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
   const pathHeight = depressionDepth + 0.05;
   const fadeEdge = 1.0;  // smooth transition at the edges
 
-  for (let r = 0; r < rows.length; r++) {
-    for (let i = 0; i < rows[r].length; i++) {
-      const p = rows[r][i];
+  for (let r = 0; r < rows.length; r++) {                                  // loop over all floor vertices, row by row
+    for (let i = 0; i < rows[r].length; i++) {                             
+      const p = rows[r][i];                                                // grab current vertex position 
       const x = p[0], z = p[2];
 
-      // Compute horizontal distances to edges
+      // Compute horizontal distances to edges of path
       const dx = Math.max(0.0, Math.max(pathXMin - x, x - pathXMax));
       const dz = Math.max(0.0, Math.max(pathZMin - z, z - pathZMax));
-      const dist = Math.sqrt(dx * dx + dz * dz);
+      const dist = Math.sqrt(dx * dx + dz * dz);  
 
       // Smooth raise
       const fade = smoothstep(fadeEdge, 0.0, dist);
@@ -1417,15 +1359,15 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
 
   // Add top surface positions
   for (const row of rows) {
-    for (const p of row) positions.push(...p);
+    for (const p of row) positions.push(...p);         // vertex storage -- adds all the xyz coords of rows into positions[] for webgl
   }
 
-  const vertsPerRow = outer.length;
+  const vertsPerRow = outer.length;                    // each ring has vertices stored in outer 
 
   // Triangulate top surface
-  for (let y = 0; y < radialSteps; y++) {
-    for (let x = 0; x < vertsPerRow - 1; x++) {
-      const i0 = y * vertsPerRow + x;
+  for (let y = 0; y < radialSteps; y++) {              // iterates through each grid square on the top surface and gets 4 vertex indices (i0–i3) to form two triangles
+    for (let x = 0; x < vertsPerRow - 1; x++) {        // we convert the grid of vertices into triangles so webgl can render
+      const i0 = y * vertsPerRow + x;                  // loops over each grid quad and splits into 2 triangles
       const i1 = i0 + 1;
       const i2 = i0 + vertsPerRow;
       const i3 = i2 + 1;
@@ -1434,9 +1376,9 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
     }
   }
 
-  const topVertexCount = positions.length / 3;
+  const topVertexCount = positions.length / 3;          // number of vertices on top surface
 
-  // Duplicate bottom
+  // Duplicate all top vertices downward by height to for the bottom of the volumetric mesh
   for (let i = 0; i < topVertexCount; i++) {
     const x = positions[i * 3 + 0];
     const y = positions[i * 3 + 1] - height;
@@ -1445,7 +1387,7 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
     uvs.push(uvs[i * 2 + 0], uvs[i * 2 + 1]);
   }
 
-  // Side walls 
+  // Side walls - connects outer ring of top with one on bottom to form the walls
   for (let x = 0; x < vertsPerRow - 1; x++) {
     const topA = x;
     const topB = x + 1;
@@ -1456,9 +1398,9 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
     indices.push(topA, topB, botB);
   }
 
-  // Bottom cap
+  // Bottom cap 
   const baseStart = topVertexCount;
-  const center = [0, outer[0][1] - height, 0];
+  const center = [0, outer[0][1] - height, 0]; // defines a central point for a triangle fan on the bottom face
 
   const centerIdx = positions.length / 3;
   positions.push(...center);
@@ -1468,9 +1410,9 @@ function generateVolumetricFloorWithDepression(caveGeometry, {
     const a = baseStart + i;
     const b = baseStart + i + 1;
     indices.push(centerIdx, b, a);
-  }
+  }                                           // Forms a triangle fan connecting bottom ring vertices to the center — filling in the bottom face.
   
-  return {
+  return {                                    // returns everything needed for rendering the mesh : pos, uvs, indices, rings (to place crystals, rocks etc)
     position: new Float32Array(positions),
     uv: new Float32Array(uvs),
     index: new Uint16Array(indices),
@@ -1578,50 +1520,50 @@ function generateWaterPlane(res = 64, radius = 7.0, y = -2.48) {
   };
 }
 
-function generateDomeCrystals(clusterCount = 30) {
+function generateDomeCrystals(clusterCount = 30) {    // function to gen up to 30 crystal clusters 
   if (!caveGeometry) return;
 
   const pos = caveGeometry.position;
   const idx = caveGeometry.index;
 
   for (let i = 0; i < clusterCount; i++) {
-    const triIndex = Math.floor(rand() * (idx.length / 3)) * 3;
+    const triIndex = Math.floor(rand() * (idx.length / 3)) * 3;    // picks a random triangle 
 
-    const i0 = idx[triIndex] * 3;
+    const i0 = idx[triIndex] * 3;               
     const i1 = idx[triIndex + 1] * 3;
-    const i2 = idx[triIndex + 2] * 3;
+    const i2 = idx[triIndex + 2] * 3;                              // converts vertex indices to pos array ( 3 floats per vertex )
 
-    const v0 = [pos[i0], pos[i0 + 1], pos[i0 + 2]];
+    const v0 = [pos[i0], pos[i0 + 1], pos[i0 + 2]];                // extracts 3D positions of triangle's vertices           
     const v1 = [pos[i1], pos[i1 + 1], pos[i1 + 2]];
     const v2 = [pos[i2], pos[i2 + 1], pos[i2 + 2]];
 
-    let u = rand(), v = rand();
+    let u = rand(), v = rand();                                    // barycentric interpolation - gen random point inside triangle to ensure uniform sampling
     if (u + v > 1) {
       u = 1 - u;
       v = 1 - v;
     }
 
-    const rawP = [
+    const rawP = [                                                // interpolates between triangle vertices to get random point on surface
       v0[0] + u * (v1[0] - v0[0]) + v * (v2[0] - v0[0]),
       v0[1] + u * (v1[1] - v0[1]) + v * (v2[1] - v0[1]),
       v0[2] + u * (v1[2] - v0[2]) + v * (v2[2] - v0[2]),
     ];
 
-    const p = displaceInward(rawP);
+    const p = displaceInward(rawP);                               // pulls point inward towards dome center, preserving height 
     const y = p[1];
 
-    const edge1 = vec3.subtract([], v1, v0);
+    const edge1 = vec3.subtract([], v1, v0);                      // surface normal to define crystal orientation vector (cross-product of edges)
     const edge2 = vec3.subtract([], v2, v0);
     const n = vec3.cross([], edge1, edge2);
     vec3.normalize(n, n);
 
     if (y > 4.0) {
-      const inward = vec3.negate([], n);
+      const inward = vec3.negate([], n);                          // invert normal 
       const count = 3 + Math.floor(rand() * 5);
       generateCluster(p, inward, count, "pointy");
 
-      const tipOffset = [0, 1.0, 0]; // crystal height is ~1.0
-      const dropOrigin = vec3.add([], p, tipOffset);
+      const tipOffset = [0, 1.0, 0]; // crystal height is ~1.0    
+      const dropOrigin = vec3.add([], p, tipOffset);              // adds drop emitter to tip of crystal
       dropSources.push(dropOrigin);
 
     } else {
@@ -1779,7 +1721,7 @@ function setupCaveDomeBuffers() {
 }
 
 function setupFloorBuffers() {
-  floorMesh= generateVolumetricFloorWithDepression(caveGeometry, {
+  floorMesh= generateVolumetricFloorWithDepression({                  // calls the procedural function that builds the mesh stuff 
     height: 3.0,
     res: 64,
     radialSteps: 10,
@@ -1787,18 +1729,16 @@ function setupFloorBuffers() {
     depressionDepth: 2.0,  
     uvScale: 3.0
   })
-  const mesh = floorMesh; // Use the generated floor mesh directly
+  const mesh = floorMesh;                                             // Use the generated floor mesh directly
   
-  crystals= []; // Reset crystals for new floor
+  crystals= [];                                                       // empty crystal array 
 
-  const posBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+  const posBuffer = gl.createBuffer();                                // create and bind buffers for position, uvs and index  (upload floor buffers to GPU)
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);                          // (will be used later in draw calls)
   gl.bufferData(gl.ARRAY_BUFFER, mesh.position, gl.STATIC_DRAW);
-
   const uvBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, mesh.uv, gl.STATIC_DRAW);
-
   const idxBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuffer);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
@@ -1810,20 +1750,19 @@ function setupFloorBuffers() {
     vertexCount: mesh.vertexCount
   };
 
-  // Mushrooms along the path 
+  // MUSHROOMS ALONG PATH
   const pathXMin = 0.5;
   const pathXMax = 1.0;
   const pathZMin = -2.2;
   const pathZMax = 3.5;
 
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 8; i++) {                           // Place 8 mushrooms randomly
     const x = pathXMin + rand() * (pathXMax - pathXMin);
     const z = pathZMin + rand() * (pathZMax - pathZMin);
-
-    // Find closest vertex on floor for y
-    let closestY = -2.5;
-    let minDist = Infinity;
-    const verts = floorMesh.position;
+    // Find closest vertex on floor for y position: ('cause floor isn't flat)
+    let closestY = -2.5;                                 
+    let minDist = Infinity;                               // for search loop, so that first find is always accepted
+    const verts = floorMesh.position;                     // stores positions to loop over
     for (let j = 0; j < verts.length; j += 3) {
       const dx = verts[j] - x;
       const dz = verts[j + 2] - z;
@@ -1833,8 +1772,7 @@ function setupFloorBuffers() {
         closestY = verts[j + 1];
       }
     }
-
-     if (minDist < 0.5 * 0.5) {  
+     if (minDist < 0.5 * 0.5) {                           // add mushroom if point close enough to vertex
       mushrooms.push({
         position: [x, closestY + 0.01, z],
         scale: 0.2 + rand() * 0.2,
@@ -1843,14 +1781,13 @@ function setupFloorBuffers() {
     }
   }
 
-  // Crystals on water floor 
-  for (let i = 0; i < 40; i++) {
+
+  // CRYSTALS ON WATER FLOOR 
+  for (let i = 0; i < 40; i++) {                    // place 40 crystals , same logic as placing mushrooms
     const x = (Math.random() * 2 - 1) * 3.5;
     const z = (Math.random() * 2 - 1) * 3.5;
-
     // Only add inside radius
     if (Math.hypot(x, z) > 6.8) continue;
-
     // Sample height from floorMesh
     let closestY = WATER_HEIGHT;
     let minDist = Infinity;
@@ -1876,29 +1813,28 @@ function setupFloorBuffers() {
   }
 
 
-  // Rock ring setup 
-  surfaceRing = mesh.rings[0]; // outer ring of the floor top surface
+  // ROCK RING SETUP  
+  surfaceRing = mesh.rings[0];                                            // outer ring of the floor top surface
   rockInstances = [];
-  const occupied = new Set();  // track which indices are used for rocks
+  const occupied = new Set();                                             // track which indices are used for rocks
 
   for (let i = 0; i < surfaceRing.length; i++) {
-    if (rand() < 0.65) {  // 65% chance to place a rock
+    if (rand() < 0.65) {                                                  // 65% chance to place a rock for each vertex in the ring
       const [x, y, z] = surfaceRing[i];
-      const r = Math.hypot(x, z);
-      const inward = 0.4 + rand() * 0.5;
+      const r = Math.hypot(x, z);                                         // computes radial distance from origin to point in 2D (sqrt(x^2+y^2))
+      const inward = 0.4 + rand() * 0.5;                                  // offset rocks inwards with noise
       const rx = x * (1 - inward / r);
       const rz = z * (1 - inward / r);
-      const ry = y + 0.2;
+      const ry = y + 0.2;                                                 // raise slightly
       const scale = 0.9 + rand() * 0.8;
 
-      rockInstances.push({ position: [rx, ry, rz], scale });
-      occupied.add(i);  // mark index as used
+      rockInstances.push({ position: [rx, ry, rz], scale });              // store rock transform 
+      occupied.add(i);                                                    // mark index as used
     }
   }
-
-  // Generate clusters around the surface ring
-  for (let i = 0; i < surfaceRing.length; i++) {
-    if (occupied.has(i)) continue;  // skip rock-filled slots
+  // CRYSTAL CLUSTERS
+  for (let i = 0; i < surfaceRing.length; i++) {                          // Generate clusters of crystals around the surface ring in the points not filled by rocks
+    if (occupied.has(i)) continue;                                        // skip rock-filled slots
 
     const [x, y, z] = surfaceRing[i];
     const r = Math.hypot(x, z);
@@ -1911,43 +1847,43 @@ function setupFloorBuffers() {
     const up = [0, 1, 0];
 
     const clusterSize = 2 + Math.floor(rand() * 2);
-    const baseScale = rand() < 0.2 ? 1.5 : 1.0;  // 20% chance to make the whole cluster bigger
+    const baseScale = rand() < 0.2 ? 1.5 : 1.0;                           // 20% chance to make the whole cluster bigger
     generateCluster(center, up, clusterSize, "ring", baseScale);
   }
   
-  // Manual glowing crystal cluster at path start  ------ remove
-  const crystalOccupancy = new Set();
+  const crystalOccupancy = new Set();                                     // build new set of crystals to avoid placing mushrooms later 
   for (const c of crystals) {
     const key = `${Math.round(c.position[0] * 10)},${Math.round(c.position[2] * 10)}`;
     crystalOccupancy.add(key);
   }
 
-  rockMesh = generateRockMesh();
+  rockMesh = generateRockMesh();                                          // call the generate rock mesh (spherical geometry for single rock)
 
-  rockBuffers = {
+  rockBuffers = {                                                         // buffers that hold the geometry of one rock 
     position: gl.createBuffer(),
     uv: gl.createBuffer(),
     index: gl.createBuffer(),
   };
 
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, rockBuffers.position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, rockBuffers.position);                   // bind position buffer and upload vertex positions from rockMesh to GPU
   gl.bufferData(gl.ARRAY_BUFFER, rockMesh.position, gl.STATIC_DRAW);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, rockBuffers.uv);
+  gl.bindBuffer(gl.ARRAY_BUFFER, rockBuffers.uv);                         // bind UV buffer and upload UV coords for rock 
   gl.bufferData(gl.ARRAY_BUFFER, rockMesh.uv, gl.STATIC_DRAW);
 
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rockBuffers.index);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rockBuffers.index);              // bind index buffer and upload triangle indices 
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rockMesh.index, gl.STATIC_DRAW);
 
-  rockBuffers.vertexCount = rockMesh.vertexCount;
+  rockBuffers.vertexCount = rockMesh.vertexCount;                         // store indices (triangle*3) to know hm to draw later when rendering rocks 
 
+
+  // MUSHROOM IN EMPTY ROCKS AND CRYSTAL SPOTS 
   for (let i = 0; i < surfaceRing.length; i++) {
-    if (occupied.has(i)) continue;
+    if (occupied.has(i)) continue;                          
     const [x, y, z] = surfaceRing[i];
 
     const key = `${Math.round(x * 10)},${Math.round(z * 10)}`;
-    if (crystalOccupancy.has(key)) continue;  // skip if a crystal is nearby
+    if (crystalOccupancy.has(key)) continue;                              // skip if a crystal is nearby
 
     if (rand() < 0.6) {
       const r = Math.hypot(x, z);
@@ -2336,13 +2272,13 @@ function drawReflectionScene() {
 function drawCave(projection, view) {
   gl.useProgram(shaderProgram);
 
-  gl.uniformMatrix4fv(shaderProgram.uProjection, false, projection);
+  gl.uniformMatrix4fv(shaderProgram.uProjection, false, projection);  // send camera proj and view matrices to shader 
   gl.uniformMatrix4fv(shaderProgram.uView, false, view);
-  gl.uniform3fv(shaderProgram.uLightDir, [0.3, -1.0, 0.2]);
+  gl.uniform3fv(shaderProgram.uLightDir, [0.3, -1.0, 0.2]);           // sets directional light 
   gl.uniform3fv(shaderProgram.uLightColor, [1.0, 0.8, 0.8]);
-  gl.uniform1i(shaderProgram.uUseTexture, textures.cave ? 1 : 0);
+  gl.uniform1i(shaderProgram.uUseTexture, textures.cave ? 1 : 0);     // enables/disables texture depending on if albedo exists
 
-  if (textures.cave) {
+  if (textures.cave) {                                                // bind textures
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textures.cave);
     gl.uniform1i(shaderProgram.uAlbedo, 0);
@@ -2377,13 +2313,13 @@ function drawCave(projection, view) {
     gl.uniform1i(gl.getUniformLocation(shaderProgram, "uUseTranslucency"), 0);
   }
 
-  const model = mat4.create();
+  const model = mat4.create();                                               // identity model matrix in world space
   gl.uniformMatrix4fv(shaderProgram.uModel, false, model);
-  gl.uniform3fv(shaderProgram.uBumpCenters, new Float32Array(bumpCenters));
+  gl.uniform3fv(shaderProgram.uBumpCenters, new Float32Array(bumpCenters));  // sends procedural bump data 
   gl.uniform1fv(shaderProgram.uBumpHeights, new Float32Array(bumpHeights));
   gl.uniform1fv(shaderProgram.uBumpRadii, new Float32Array(bumpRadii));
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, caveMesh.position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, caveMesh.position);                         // Binds vertex positions, UVs, triangle indices for cave mesh. GPU will use for rendering.
   gl.vertexAttribPointer(shaderProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(shaderProgram.aPosition);
 
@@ -2393,10 +2329,10 @@ function drawCave(projection, view) {
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, caveMesh.index);
 
-  const useTorch = torchLights.length > 0;
+  const useTorch = torchLights.length > 0;                                  // enables dynamic torch lighting if exists 
   gl.uniform1i(gl.getUniformLocation(shaderProgram, "uUseTorchLight"), useTorch ? 1 : 0);
 
-  if (useTorch) {
+  if (useTorch) {                                                           // uploads up to 4 torches 
     const maxLights = 4;
     const activeLights = torchLights.slice(0, maxLights);
 
@@ -2408,23 +2344,21 @@ function drawCave(projection, view) {
       gl.uniform1f(gl.getUniformLocation(shaderProgram, `uTorchRadius[${i}]`), activeLights[i].radius);
     }
   } else {
-    // Set safe defaults 
-    gl.uniform1i(gl.getUniformLocation(shaderProgram, "uNumTorchLights"), 0);
+    gl.uniform1i(gl.getUniformLocation(shaderProgram, "uNumTorchLights"), 0); // otherwise defaults
   }
 
-  const useCrystals = crystals.length > 0;
-  const crystalColor = [0.4, 0.2, 1.0];
-  const ringCrystals = crystals.filter(c => c.type === "ring");
-  const sorted = ringCrystals.slice().sort((a, b) => {
+  const useCrystals = crystals.length > 0;                                  // enables crystal lights (same stuff in drawRocks)
+  const ringCrystals = crystals.filter(c => c.type === "ring");             // select ring crystals 
+  const sorted = ringCrystals.slice().sort((a, b) => {                      // sorts them 
     const angleA = Math.atan2(a.position[2], a.position[0]);
     const angleB = Math.atan2(b.position[2], b.position[0]);
     return angleA - angleB;
   });
 
-  const maxLights = Math.min(20, sorted.length);  // avoid overflow
+  const maxLights = Math.min(20, sorted.length);  
   const spacing = sorted.length / maxLights;
 
-  const lightingCrystals = [];
+  const lightingCrystals = [];                                              // space them, push indices 
   for (let i = 0; i < maxLights; i++) {
     const index = Math.floor(i * spacing);
     lightingCrystals.push(sorted[index]);
@@ -2432,13 +2366,13 @@ function drawCave(projection, view) {
 
   const crystalPositions = lightingCrystals.map(c => c.position);
 
-  gl.uniform1i(gl.getUniformLocation(shaderProgram, "uUseCrystalLight"), useCrystals ? 1 : 0);
+  gl.uniform1i(gl.getUniformLocation(shaderProgram, "uUseCrystalLight"), useCrystals ? 1 : 0);       // enable lighting and sends pos, color and time 
   gl.uniform1i(gl.getUniformLocation(shaderProgram, "uNumCrystalLights"), crystalPositions.length);
   gl.uniform3fv(gl.getUniformLocation(shaderProgram, "uCrystalColor"), getCurrentCrystalColor());
   gl.uniform1f(gl.getUniformLocation(shaderProgram, "uTime"), time);
 
   if (!shaderProgram.uPulseOverride) {
-    shaderProgram.uPulseOverride = gl.getUniformLocation(shaderProgram, "uPulseOverride");
+    shaderProgram.uPulseOverride = gl.getUniformLocation(shaderProgram, "uPulseOverride");           // pulse override if sword extracted
   }
   gl.uniform1f(shaderProgram.uPulseOverride, (swordState === 2) ? 1.0 : 0.0);
 
@@ -2446,8 +2380,9 @@ function drawCave(projection, view) {
     gl.uniform3fv(gl.getUniformLocation(shaderProgram, `uCrystalPos[${i}]`), crystalPositions[i]);
   }
 
-  gl.drawElements(gl.TRIANGLES, caveMesh.vertexCount, gl.UNSIGNED_SHORT, 0);
-  gl.activeTexture(gl.TEXTURE0);  // Reset to default
+  gl.drawElements(gl.TRIANGLES, caveMesh.vertexCount, gl.UNSIGNED_SHORT, 0);                         // final rendering 
+
+  gl.activeTexture(gl.TEXTURE0);       // Reset to default
   gl.bindTexture(gl.TEXTURE_2D, null); // Clear last bound texture (safety)
 
 }
@@ -2523,7 +2458,6 @@ function drawFloor(projection, view) {
   }
 
   const useCrystals = crystals.length > 0;
-  const crystalColor = [0.4, 0.2, 1.0];
   const ringCrystals = crystals.filter(c => c.type === "ring");
   const sorted = ringCrystals.slice().sort((a, b) => {
     const angleA = Math.atan2(a.position[2], a.position[0]);
@@ -2531,7 +2465,7 @@ function drawFloor(projection, view) {
     return angleA - angleB;
   });
 
-  const maxLights = Math.min(20, sorted.length);  // avoid overflow
+  const maxLights = Math.min(20, sorted.length);  
   const spacing = sorted.length / maxLights;
 
   const lightingCrystals = [];
@@ -2560,7 +2494,7 @@ function drawFloor(projection, view) {
   gl.drawElements(gl.TRIANGLES, floorBuffers.vertexCount, gl.UNSIGNED_SHORT, 0);
 }
 
-function drawDrops(projection, view) {
+function drawDrops(projection, view) {        // draws drops using pointy crystals mesh
   gl.useProgram(crystalProgram);
   gl.uniformMatrix4fv(crystalProgram.uProjection, false, projection);
   gl.uniformMatrix4fv(crystalProgram.uView, false, view);
@@ -2651,7 +2585,7 @@ function drawWater(projection, view, texIndex) {
     gl.uniform1i(waterProgram.uReflectionTex, 11);                // tells shader uReflectionTex should use texture 11
   }                                                               
   gl.activeTexture(gl.TEXTURE12);                     // activates texture unit 12 for distortion map
-  gl.bindTexture(gl.TEXTURE_2D, rippleDistortionTex); // binds the distortion texture to texture unit 12 Uencodes the normal-based distortion map for water ripples)
+  gl.bindTexture(gl.TEXTURE_2D, rippleDistortionTex); // binds the distortion texture to texture unit 12 Uencodes the normal-based distortion map for water ripples
   gl.uniform1i(waterProgram.uDistortionMap, 12);      // tells shader uDistortionMap should use texture 12
 
 
@@ -2803,65 +2737,65 @@ function drawRocks(projection, view) {
     gl.uniform1i(rockProgram.uSpecular, 10);
   }
 
-  for (const rock of rockInstances) {
-    const model = mat4.create();
-    mat4.translate(model, model, rock.position);
+  for (const rock of rockInstances) {                                                 // loop over all placed rock instances
+    const model = mat4.create();                                                      // build rock matrix, send to GPU
+    mat4.translate(model, model, rock.position);                                        
     mat4.scale(model, model, [rock.scale, rock.scale, rock.scale]);
     gl.uniformMatrix4fv(rockProgram.uModel, false, model);
 
-    // Torch lighting logic
-    const useTorch = torchLights.length > 0;
+    // TORCH LIGHT LOGIC 
+    const useTorch = torchLights.length > 0;                                          // enable or disable depending on if torches exist
     gl.uniform1i(gl.getUniformLocation(rockProgram, "uUseTorchLight"), useTorch ? 1 : 0);
 
-    if (useTorch) {
+    if (useTorch) {                                                                   // limit to 4 torches max, send count to shader 
       const maxLights = 4;
       const activeLights = torchLights.slice(0, maxLights);
 
       gl.uniform1i(gl.getUniformLocation(rockProgram, "uNumTorchLights"), activeLights.length);
 
-      for (let i = 0; i < activeLights.length; i++) {
+      for (let i = 0; i < activeLights.length; i++) {                                // send position, color and radius 
         gl.uniform3fv(gl.getUniformLocation(rockProgram, `uTorchPos[${i}]`), activeLights[i].position);
         gl.uniform3fv(gl.getUniformLocation(rockProgram, `uTorchColor[${i}]`), activeLights[i].color);
         gl.uniform1f(gl.getUniformLocation(rockProgram, `uTorchRadius[${i}]`), activeLights[i].radius);
       }
     } else {
-      gl.uniform1i(gl.getUniformLocation(rockProgram, "uNumTorchLights"), 0);
+      gl.uniform1i(gl.getUniformLocation(rockProgram, "uNumTorchLights"), 0);        // if no torches, send count = 0 
     }
 
-    // Crystal light logic
+    // CRYSTAL LIGHT LOGIC 
     const useCrystals = crystals.length > 0;
     const ringCrystals = crystals.filter(c => c.type === "ring" || c.type === "rock");
-    const sorted = ringCrystals.slice().sort((a, b) => {
+    const sorted = ringCrystals.slice().sort((a, b) => {                             // sort crystals around ring in angular order (even spacing)
       const angleA = Math.atan2(a.position[2], a.position[0]);
       const angleB = Math.atan2(b.position[2], b.position[0]);
       return angleA - angleB;
     });
 
-    const maxLights = Math.min(20, sorted.length);  // avoid overflow
-    const spacing = sorted.length / maxLights;
-    const lightingCrystals = [];
-    for (let i = 0; i < maxLights; i++) {
+    const maxLights = Math.min(20, sorted.length);                                  // avoid overflow, limits to 20 
+    const spacing = sorted.length / maxLights;                                      // spacing factor, space from sorting list
+    const lightingCrystals = [];                                                    // empty list where I collect the crystals that emit light 
+    for (let i = 0; i < maxLights; i++) {                                           // fill list 
       const index = Math.floor(i * spacing);
       lightingCrystals.push(sorted[index]);
     }
 
-    const crystalPositions = lightingCrystals.map(c => c.position);
+    const crystalPositions = lightingCrystals.map(c => c.position);                       // create array of 3D positions of lighting crystals 
 
-    gl.uniform1i(gl.getUniformLocation(rockProgram, "uUseCrystalLight"), useCrystals ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(rockProgram, "uNumCrystalLights"), crystalPositions.length);
-    gl.uniform3fv(gl.getUniformLocation(rockProgram, "uCrystalColor"), getCurrentCrystalColor());
-    gl.uniform1f(gl.getUniformLocation(rockProgram, "uTime"), time);
+    gl.uniform1i(gl.getUniformLocation(rockProgram, "uUseCrystalLight"), useCrystals ? 1 : 0);      // send boolean to shader to see if we apply light 
+    gl.uniform1i(gl.getUniformLocation(rockProgram, "uNumCrystalLights"), crystalPositions.length); // tell shader hm crystals to expect 
+    gl.uniform3fv(gl.getUniformLocation(rockProgram, "uCrystalColor"), getCurrentCrystalColor());   // sends current glowcolor to shader
+    gl.uniform1f(gl.getUniformLocation(rockProgram, "uTime"), time);                                // sends current scene time to shader (to animate lights)
 
     if (!rockProgram.uPulseOverride) {
-      rockProgram.uPulseOverride = gl.getUniformLocation(rockProgram, "uPulseOverride");
+      rockProgram.uPulseOverride = gl.getUniformLocation(rockProgram, "uPulseOverride");  // stores location of uPulseOverride in program object to not call it again
     }
-    gl.uniform1f(rockProgram.uPulseOverride, (swordState === 2) ? 1.0 : 0.0);
+    gl.uniform1f(rockProgram.uPulseOverride, (swordState === 2) ? 1.0 : 0.0);             // if sword extracted send override flag (change pulse)
 
-    for (let i = 0; i < crystalPositions.length; i++) {
+    for (let i = 0; i < crystalPositions.length; i++) {                                   // send each crystal's pos to GPU as vec3, shader will loop over to light 
       gl.uniform3fv(gl.getUniformLocation(rockProgram, `uCrystalPos[${i}]`), crystalPositions[i]);
     }
 
-    gl.drawElements(gl.TRIANGLES, rockBuffers.vertexCount, gl.UNSIGNED_SHORT, 0);       // render rock geometry
+    gl.drawElements(gl.TRIANGLES, rockBuffers.vertexCount, gl.UNSIGNED_SHORT, 0);         // render rock geometry
   }
 }
 
@@ -2894,21 +2828,21 @@ function drawMushrooms(projection, view) {
 }
 
 function drawAllNavis(projection, view) {
-  if (!fairyProgram || !fairyBuffers) return;
+  if (!fairyProgram || !fairyBuffers) return;   
   const vaoExt = gl.getExtension("OES_vertex_array_object");
 
   gl.useProgram(fairyProgram);
 
   for (let i = 0; i < navis.length; i++) {
     const navi = navis[i];
-    const t = fairyFlapTime + navi.speedOffset;
+    const t = fairyFlapTime + navi.speedOffset;     // unique animation time for each fairy 
 
 
-    function lerp(a, b, t) {
+    function lerp(a, b, t) {                        // linear interpolation function, used to make radius, speed and height smoothly respond to fairy attraction
       return a * (1 - t) + b * t;
     }
 
-    const targetRadius = lerp(navi.baseRadius, 1.5, fairyAttraction);
+    const targetRadius = lerp(navi.baseRadius, 1.5, fairyAttraction);   // interpolates between original radius and tight radius based on fairyAttraction
     navi.radius += (targetRadius - navi.radius) * 0.05;
     const orbitRadius = navi.radius;
 
@@ -2920,15 +2854,13 @@ function drawAllNavis(projection, view) {
     navi.height += (targetHeight - navi.height) * 0.05;
     const orbitHeight = navi.height;
 
-
-    const orbitCenter = [
+    const orbitCenter = [                                               // center towards sword
       lerp(0.0, SWORD_POSITION[0], fairyAttraction),
       0.0,
       lerp(0.0, SWORD_POSITION[2], fairyAttraction)
     ];
 
-
-    const angle = t * orbitSpeed * navi.direction;
+    const angle = t * orbitSpeed * navi.direction;                      // direction is +/- 1 ccw or cw
 
     // Orbiting position
     const x = orbitCenter[0] + Math.cos(angle) * orbitRadius;
@@ -2939,10 +2871,10 @@ function drawAllNavis(projection, view) {
     const nextAngle = angle + 0.01 * navi.direction;
     const x2 = orbitCenter[0] + Math.cos(nextAngle) * orbitRadius;
     const z2 = orbitCenter[2] + Math.sin(nextAngle) * orbitRadius;
-    const y2 = orbitHeight + 0.2 * Math.sin(nextAngle * 2.0);
 
 
-    const dx = x2 - x;
+
+    const dx = x2 - x;                                                  // orientation vectors                                    
     const dz = z2 - z;
     const forward = [dx, 0, dz];
     vec3.normalize(forward, forward);
@@ -3354,96 +3286,101 @@ function updateCamera(timestamp) {
   }
 }
 
-function updateRipples(dt) {
+function updateRipples(dt) {               // takes delta time in seconds as input
   const k = 300.0;       // stiffness
   const damping = 3.0;   // damping factor
 
   const nextVelocities = new Float32Array(rippleVelocities.length);
 
   // Magical gravity ripple from sword
-  if (swordY > -2.0) {
+  if (swordY > -2.0) {                                        // if sword is extracting, gets sword pos and we def freq, amp and radius of magical ripple
     const swordX = SWORD_POSITION[0];
     const swordZ = SWORD_POSITION[2];
     const rippleFreq = 8.0;
     const rippleAmp = 0.009;
     const radius = 2.0;
 
-    for (let j = 0; j < rippleGridSize; j++) {
+    for (let j = 0; j < rippleGridSize; j++) {                // loop over every point in water grid
       for (let i = 0; i < rippleGridSize; i++) {
-        const index = j * rippleGridSize + i;
-        const x = (i / (rippleGridSize - 1)) * 14.0 - 7.0;
+        const index = j * rippleGridSize + i;                 // convert 2D grid coords in index array
+        const x = (i / (rippleGridSize - 1)) * 14.0 - 7.0;    // map grid indices to world-space coords in xz plane (water spans from -7 to +7)
         const z = (j / (rippleGridSize - 1)) * 14.0 - 7.0;
 
-        const dx = x - swordX;
+        const dx = x - swordX;                                // compute distance from point to sword
         const dz = z - swordZ;
-        const dist = Math.sqrt(dx * dx + dz * dz);
+        const dist = Math.sqrt(dx * dx + dz * dz);            // only affect nearby points
 
         if (dist < radius) {
-          const wave = Math.sin(dist * rippleFreq - time * 6.0) * rippleAmp * (1.0 - dist / radius);
-          rippleHeights[index] += wave;
+          const wave = Math.sin(dist * rippleFreq - time * 6.0) * rippleAmp * (1.0 - dist / radius); // create radially propagating sine wave (phase depends on distance 
+                                                                                                     // and time, amplitude fades with ditance)
+          rippleHeights[index] += wave;                           // add the wave to the height of the surface at that point, injecting potential energy into the system
         }
       }
     }
   }
 
+  // RIPPLE PHYSICS 
 
-  for (let row = 1; row < rippleGridSize - 1; row++) {
+  for (let row = 1; row < rippleGridSize - 1; row++) {          // skip border, loop over internal points
     for (let col = 1; col < rippleGridSize - 1; col++) {
-      const i = row * rippleGridSize + col;
+      const i = row * rippleGridSize + col;                     // convert 2D coords in 1D array for buffer storage
 
-      const left = i - 1;
+      const left = i - 1;                                       // indices of neighboring points 
       const right = i + 1;
       const up = i - rippleGridSize;
       const down = i + rippleGridSize;
 
-      const laplacian =
+      const laplacian =                                         // discrete Laplacian operator 
         rippleHeights[left] +
         rippleHeights[right] +
         rippleHeights[up] +
         rippleHeights[down] -
         4 * rippleHeights[i];
 
-      nextVelocities[i] =
-        rippleVelocities[i] +
+      nextVelocities[i] =                                       // Newton's 2nd law <3 - wave eq as syst of 1st order ODEs (height an vel)
+        rippleVelocities[i] +                                   // discretized in time using Euler integration
         (k * laplacian - damping * rippleVelocities[i]) * dt;
     }
   }
 
-  for (let i = 0; i < rippleVelocities.length; i++) {
-    rippleVelocities[i] = nextVelocities[i];
-    rippleHeights[i] += rippleVelocities[i] * dt;
+  for (let i = 0; i < rippleVelocities.length; i++) {           // loop over every point to commit changes
+    rippleVelocities[i] = nextVelocities[i];                    // save new vel
+    rippleHeights[i] += rippleVelocities[i] * dt;               // integrate vel to update position
 
-    // clamping
+    // clamping of height to avoid instability or unrealistic oscillation amplitudes
     if (rippleHeights[i] > 0.3) rippleHeights[i] = 0.3;
     if (rippleHeights[i] < -0.3) rippleHeights[i] = -0.3;
   }
 
-  
-
 }
 
-function updateRippleNormals() {
+function updateRippleNormals() {           // computes normal vectors for each point on water mesh based on current ripple heights - used to distort reflection
   const size = rippleGridSize;
-  const spacing = (waterBuffers.radius * 2) / (size - 1);
-  const invSpacing = 1.0 / (2 * spacing);
+  const spacing = (waterBuffers.radius * 2) / (size - 1);       // physical distance between adjacent points on water surface
+  const invSpacing = 1.0 / (2 * spacing);                       // used to compute finite differences (slopes) across 2 grid cells 
 
-  for (let row = 0; row < size; row++) {
+  for (let row = 0; row < size; row++) {                        // loop over each vertex in the 2D grid 
     for (let col = 0; col < size; col++) {
-      const i = row * size + col;
-      const left  = row * size + Math.max(col - 1, 0);
+      const i = row * size + col;                               // flatten 2D coords in 1D index
+
+      const left  = row * size + Math.max(col - 1, 0);          // ensures edges don't go out-of-bounds by clamping to valid neighbor indices
       const right = row * size + Math.min(col + 1, size - 1);
       const down  = Math.max(row - 1, 0) * size + col;
       const up    = Math.min(row + 1, size - 1) * size + col;
-      const hL = rippleHeights[left];
+
+      const hL = rippleHeights[left];                           // sample heights at neighbors
       const hR = rippleHeights[right];
       const hD = rippleHeights[down];
       const hU = rippleHeights[up];
-      const dx = (hR - hL) * invSpacing * 5.0;  
+      // approx slope of surface in x and z directions (central difference gradient)
+      const dx = (hR - hL) * invSpacing * 5.0;                  // multiplied by 5.0 to exagerate distortion effect 
       const dz = (hU - hD) * invSpacing * 5.0;
+      // construct normal vector : 
       const nx = -dx, ny = 1.0, nz = -dz;
+      // normalize the normal  (unit lenght for light and distortion)
       const len = Math.hypot(nx, ny, nz);
       const invLen = len > 0.00001 ? 1.0 / len : 1.0;
-
+      // store normal in normal array (3 components per vertex : x, y, z). rippleNormals buffer is uploaded to distortiontex and passed to water shader 
       rippleNormals[i * 3 + 0] = nx * invLen;
       rippleNormals[i * 3 + 1] = ny * invLen;
       rippleNormals[i * 3 + 2] = nz * invLen;
@@ -3452,59 +3389,58 @@ function updateRippleNormals() {
 }
 
 function updateDrops(time) {
-  if (time - lastDropTime > DROP_INTERVAL) {
-    lastDropTime = time;
-    const p = dropSources[Math.floor(Math.random() * dropSources.length)];
-    drops.push({
+  if (time - lastDropTime > DROP_INTERVAL) {                               // waits before new drop falling
+    lastDropTime = time;                                                   // update time stamp of last drop 
+    const p = dropSources[Math.floor(Math.random() * dropSources.length)]; // picks random drop source from array 
+    drops.push({                                                           // adds new drop obj : starts at p , moves downwards with velocity, has unit mass
       position: [...p],
       velocity: [0, -DROP_SPEED, 0],
-      mass: 1.0  // uniform mass
+      mass: 1.0  
     });
-
   }
-    for (let i = drops.length - 1; i >= 0; i--) {
-      const d = drops[i];
+    // PHYSICS UPDATE FOR EACH DROP
+    for (let i = drops.length - 1; i >= 0; i--) {           // iterate in reverse to safely remove drops when they hit the water 
+      const d = drops[i];                                   // access individual drop
 
       // Apply gravity to vertical velocity
       const scaledGravity = 2.0;
       const force = -d.mass * scaledGravity;
-      const acceleration = force / d.mass;  // cancels out to -scaledGravity
-      d.velocity[1] += acceleration * 0.016;
+      const acceleration = force / d.mass;  
+      d.velocity[1] += acceleration * 0.016;                // Newton's second law. dt = 0.016 = 60fps
 
       // Update position using velocity
       d.position[1] += d.velocity[1] * 0.016;
 
       if (d.position[1] <= WATER_HEIGHT) {
-        injectRippleAtPosition(d.position);
+        injectRippleAtPosition(d.position);                 // triggers inject ripple
         drops.splice(i, 1); // remove drop
       }
     }
 }
 
 function injectRippleAtPosition(pos) {
-  const radius = waterBuffers.radius || 7.0;
+  const radius = waterBuffers.radius || 7.0;     // extent of water surface
   const gridSize = rippleGridSize;
-  const spacing = (radius * 2) / (gridSize - 1); // approximate
+  const spacing = (radius * 2) / (gridSize - 1); // dist between adj grid points 
 
-  // Convert world x/z to grid indices
+  // Convert world x/z to grid indices (integer grid coords)
   const gridX = Math.round((pos[0] + radius) / spacing);
   const gridZ = Math.round((pos[2] + radius) / spacing);
 
   const index = gridZ * gridSize + gridX;
-  if (index >= 0 && index < rippleVelocities.length) {
-    const radiusInCells = 2;
-    for (let dz = -radiusInCells; dz <= radiusInCells; dz++) {
+  if (index >= 0 && index < rippleVelocities.length) {            // ensure we're in the simulation buffer (the index)
+    const radiusInCells = 2;                                      // ripple radius in grid cells
+    for (let dz = -radiusInCells; dz <= radiusInCells; dz++) {    // loop over square neighborhood around impact point
       for (let dx = -radiusInCells; dx <= radiusInCells; dx++) {
-        const nx = gridX + dx;
+        const nx = gridX + dx;                                    // compute neighbor grid coords
         const nz = gridZ + dz;
-        if (nx >= 0 && nx < gridSize && nz >= 0 && nz < gridSize) {
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist <= radiusInCells) {
-            const falloff = 1.0 - dist / radiusInCells;
+        if (nx >= 0 && nx < gridSize && nz >= 0 && nz < gridSize) { // avoid invadid neighbors
+          const dist = Math.sqrt(dx * dx + dz * dz);                // dist from center of inpulse 
+          if (dist <= radiusInCells) {                              // only applies impulse within circular region                 
             const i = nz * gridSize + nx;
             const r = 0.6; // ripple radius
-            const envelope = Math.exp(-4.0 * (dist / r) * (dist / r)); // Gaussian falloff
-            rippleVelocities[i] += 0.8 * envelope;
+            const envelope = Math.exp(-4.0 * (dist / r) * (dist / r)); // Gaussian falloff : Gaussian envelope centered at drop location, smoothly fades w distance
+            rippleVelocities[i] += 0.8 * envelope;                 // inject vertical vel at each point (kin energy)
 
           }
         }
@@ -3512,8 +3448,8 @@ function injectRippleAtPosition(pos) {
     }
 
   }
-  
-  currentGlowPosition = [pos[0], pos[2]];  // x, z
+ 
+  currentGlowPosition = [pos[0], pos[2]];  // x, z - sets values used in water shader to show brief light at impact position 
   currentGlowTime = performance.now() * 0.001;
 }
 
@@ -3547,9 +3483,9 @@ function roundVertex([x, y, z], precision = 1e4) {
   ];
 }
 
-function smoothstep(edge0, edge1, x) {
-  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+function smoothstep(edge0, edge1, x) {                          // interpolation function for smooth transition between two threshold
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0))); // edge 0 : lower bound of transition, edge 1 : upper bound , x : input value 
+  return t * t * (3 - 2 * t);                                        // returns a value from 0 to 1 (cubic Hermite interpolation)
 }
 
 function createShader(type, source) {
@@ -3593,7 +3529,7 @@ function displaceInward(position, intensity = 1.5) {
 
 //////// 9. DOM + EVENT LISTENERS ////////
 
-window.onload = () => {
+window.onload = () => {            // Document Object Model. Runs once browser loads page. Initializes everything.
   initGL();
   setupShaders();
   setupCaveDomeBuffers();
