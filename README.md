@@ -8,13 +8,13 @@ The highlight of the repository is the **Final Project: Magical Cave**, a fully 
 ## 🪄 The Magical Cave Project
 
 ### Features
-- Procedural cave geometry (dome + rocky floor)
+- Procedural cave geometry (dome + rocky floor and others)
 - Realistic **PBR materials** with textures (albedo, normal, roughness, etc.)
 - **Glowing crystals** with dynamic light emission
 - **Animated water surface** with ripples and reflections
 - **Falling drops** affecting the water simulation
 - **Fairies (Navi-style)** with glowing bodies and flapping wings
-- **Interactive objects** like mushrooms, torches, and a rising sword
+- **Interactive object** rising sword
 - **Keyboard & mouse camera control**
 
 Everything is built in **WebGL**, with custom shaders for lighting, shading, and effects.
