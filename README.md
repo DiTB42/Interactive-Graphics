@@ -29,6 +29,7 @@ Everything is built in **WebGL**, with custom shaders for lighting, shading, and
 ---
 
 ## 🎓 Course Information
+- **Author:** Diana Ioana Bubenek Turconi
 - **Course:** Interactive Graphics  
 - **University:** Sapienza University of Rome  
 - **Year:** 2024–2025  
